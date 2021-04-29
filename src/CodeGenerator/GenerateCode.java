@@ -231,6 +231,10 @@ class GenerateCode extends Visitor {
 		classFile.addComment(ci, "Explicit Constructor Invocation");
 
 		// YOUR CODE HERE
+
+		classFile.addInstruction(new Instruction(RuntimeConstants.opc_aload_0));
+		classFile.addInstruction(new MethodInvocationInstruction(RuntimeConstants.opc_invokespecial, ci.targetClass.name(), "<init>()V", ci.constructor.paramSignature()));
+
 		classFile.addComment(ci, "End CInvocation");
 		return null;
 	}
@@ -244,6 +248,7 @@ class GenerateCode extends Visitor {
 		currentClass = cd;
 
 		// YOUR CODE HERE
+		cd.constructors.visit(this);
 
 		return null;
 	}
@@ -259,6 +264,10 @@ class GenerateCode extends Visitor {
 		cd.cinvocation().visit(this);
 
 		// YOUR CODE HERE
+
+		classFile.addComment(cd, "Field Init Generation Start");
+		new GenerateFieldInits(gen, currentClass, false);
+		classFile.addComment(cd, "Field Init Generation End");
 
 		classFile.addInstruction(new Instruction(RuntimeConstants.opc_return));
 

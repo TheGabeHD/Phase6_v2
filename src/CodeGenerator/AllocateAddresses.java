@@ -19,7 +19,6 @@ class AllocateAddresses extends Visitor {
 		// YOUR CODE HERE
 		ld.address = gen.getAddress();
 		if (ld.type().isLongType() || ld.type().isDoubleType()) {
-			gen.setAddress(0);
 			gen.inc2Address(); 
 		}
 		else {
@@ -34,6 +33,14 @@ class AllocateAddresses extends Visitor {
 	// PARAMETER DECLARATION
 	public Object visitParamDecl(ParamDecl pd) {
 		// YOUR CODE HERE
+
+		pd.address = gen.getAddress();
+
+		if (pd.type().isDoubleType() || pd.type().isLongType()) {
+			gen.inc2Address();
+		} else {
+			gen.incAddress();
+		}
 
 		println(pd.line + ": ParamDecl:\tAssigning address:  " + pd.address + " to parameter '" + pd.paramName().getname() + "'.");
 		return null;
