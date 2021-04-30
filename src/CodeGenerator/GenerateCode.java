@@ -200,6 +200,141 @@ class GenerateCode extends Visitor {
 	classFile.addComment(be, "Binary Expression");
 		
 	// YOUR CODE HERE
+
+	println("left: " + be.left().type.isNullType());
+	println("right: " + be.right().type.isNullType());
+
+	String label1 = "L" + gen.getLabel();
+	String label2 = "L" + gen.getLabel();
+
+
+	if (!be.type.isBooleanType()) {
+		// NOT BOOLEAN
+		be.left().visit(this);
+		gen.dataConvert(be.left().type, be.type);
+		be.right().visit(this);
+		gen.dataConvert(be.right().type, be.type);
+
+		String suffix = "";
+		switch (be.op().kind) {
+			case BinOp.PLUS  : suffix = "add"; break;
+			case BinOp.MINUS : suffix = "sub"; break;
+			case BinOp.MULT  : suffix = "mul"; break;
+			case BinOp.DIV   : suffix = "div"; break;
+			case BinOp.MOD   : suffix = "rem"; break;
+			case BinOp.AND   : suffix = "and"; break;
+			case BinOp.OR    : suffix = "or" ; break;
+			case BinOp.XOR   : suffix = "xor"; break;
+			case BinOp.LSHIFT  : suffix = "shl"; break;
+			case BinOp.RSHIFT  : suffix = "shr"; break;
+			case BinOp.RRSHIFT : suffix = "ushr"; break;
+		}
+
+		classFile.addInstruction(new Instruction(Generator.getOpCodeFromString(be.type.getTypePrefix() + suffix)));
+
+	} else {
+		// IS BOOLEAN
+		// TODO: Don't cast class type to primitive type...
+		Type ceilingType = PrimitiveType.ceilingType((PrimitiveType)be.left().type, (PrimitiveType)be.right().type);
+		be.left().visit(this);
+		gen.dataConvert(be.left().type, ceilingType);
+		be.right().visit(this);
+		gen.dataConvert(be.right().type, ceilingType);
+
+
+		switch(be.op().kind) {
+
+			case BinOp.LT :
+				if (ceilingType.isIntegerType()) {
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_if_icmplt, label1));
+				} else if (ceilingType.isLongType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_lcmp));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_iflt, label1));
+				} else if (ceilingType.isFloatType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_fcmpg));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_iflt, label1));
+				} else if (ceilingType.isDoubleType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dcmpg));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_iflt, label1));
+				}
+			
+				break;
+
+			case BinOp.LTEQ :
+				if (ceilingType.isIntegerType()) {
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_if_icmple, label1));
+				} else if (ceilingType.isLongType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_lcmp));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifle, label1));
+				} else if (ceilingType.isFloatType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_fcmpg));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifle, label1));
+				} else if (ceilingType.isDoubleType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dcmpg));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifle, label1));
+				}
+			
+				break;
+
+			case BinOp.GT :
+				if (ceilingType.isIntegerType()) {
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_if_icmpgt, label1));
+				} else if (ceilingType.isLongType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_lcmp));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifgt, label1));
+				} else if (ceilingType.isFloatType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_fcmpg));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifgt, label1));
+				} else if (ceilingType.isDoubleType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dcmpg));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifgt, label1));
+				}
+			
+				break;
+
+			case BinOp.GTEQ :
+				if (ceilingType.isIntegerType()) {
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_if_icmpge, label1));
+				} else if (ceilingType.isLongType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_lcmp));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifge, label1));
+				} else if (ceilingType.isFloatType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_fcmpg));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifge, label1));
+				} else if (ceilingType.isDoubleType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dcmpg));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifge, label1));
+				}
+			
+				break;
+
+			case BinOp.EQEQ :
+				if (ceilingType.isIntegerType()) {
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_if_icmpeq, label1));
+				} else if (ceilingType.isLongType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_lcmp));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifeq, label1));
+				} else if (ceilingType.isFloatType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_fcmpg));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifeq, label1));
+				} else if (ceilingType.isDoubleType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dcmpg));
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifeq, label1));
+				} else if (ceilingType.isClassType()) {
+					// TODO: Reference type? Null?
+				}
+			
+				break;
+		}
+
+		classFile.addInstruction(new Instruction(RuntimeConstants.opc_iconst_0));
+		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_goto, label2));
+		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label1));
+		classFile.addInstruction(new Instruction(RuntimeConstants.opc_iconst_1));
+		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label2));
+
+	}
+
 	classFile.addComment(be, "End BinaryExpr");
 	return null;
     }
@@ -248,7 +383,7 @@ class GenerateCode extends Visitor {
 		currentClass = cd;
 
 		// YOUR CODE HERE
-		cd.constructors.visit(this);
+		cd.body().visit(this);
 
 		return null;
 	}
@@ -265,10 +400,13 @@ class GenerateCode extends Visitor {
 
 		// YOUR CODE HERE
 
+		// Field Init Generation
 		classFile.addComment(cd, "Field Init Generation Start");
-		new GenerateFieldInits(gen, currentClass, false);
+		GenerateFieldInits init = new GenerateFieldInits(gen, currentClass, false);
+		currentClass.visit(init);
 		classFile.addComment(cd, "Field Init Generation End");
 
+		// Return
 		classFile.addInstruction(new Instruction(RuntimeConstants.opc_return));
 
 		// We are done generating code for this method, so transfer it to the classDecl.
@@ -625,6 +763,7 @@ class GenerateCode extends Visitor {
 		classFile.addComment(th, "This");
 
 		// YOUR CODE HERE
+		classFile.addInstruction(new Instruction(RuntimeConstants.opc_aload_0));
 
 		classFile.addComment(th, "End This");
 		return null;
