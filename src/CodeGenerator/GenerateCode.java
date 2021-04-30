@@ -196,148 +196,106 @@ class GenerateCode extends Visitor {
 
 	// BINARY EXPRESSION
     public Object visitBinaryExpr(BinaryExpr be) {
-	println(be.line + ": BinaryExpr:\tGenerating code for " + be.op().operator() + " :  " + be.left().type.typeName() + " -> " + be.right().type.typeName() + " -> " + be.type.typeName() + ".");
-	classFile.addComment(be, "Binary Expression");
-		
-	// YOUR CODE HERE
-
-	println("left: " + be.left().type.isNullType());
-	println("right: " + be.right().type.isNullType());
-
-	String label1 = "L" + gen.getLabel();
-	String label2 = "L" + gen.getLabel();
-
-
-	if (!be.type.isBooleanType()) {
-		// NOT BOOLEAN
-		be.left().visit(this);
-		gen.dataConvert(be.left().type, be.type);
-		be.right().visit(this);
-		gen.dataConvert(be.right().type, be.type);
-
+		println(be.line + ": BinaryExpr:\tGenerating code for " + be.op().operator() + " :  " + be.left().type.typeName() + " -> " + be.right().type.typeName() + " -> " + be.type.typeName() + ".");
+		classFile.addComment(be, "Binary Expression");
+			
+		// YOUR CODE HERE
 		String suffix = "";
-		switch (be.op().kind) {
-			case BinOp.PLUS  : suffix = "add"; break;
-			case BinOp.MINUS : suffix = "sub"; break;
-			case BinOp.MULT  : suffix = "mul"; break;
-			case BinOp.DIV   : suffix = "div"; break;
-			case BinOp.MOD   : suffix = "rem"; break;
-			case BinOp.AND   : suffix = "and"; break;
-			case BinOp.OR    : suffix = "or" ; break;
-			case BinOp.XOR   : suffix = "xor"; break;
-			case BinOp.LSHIFT  : suffix = "shl"; break;
-			case BinOp.RSHIFT  : suffix = "shr"; break;
-			case BinOp.RRSHIFT : suffix = "ushr"; break;
+		if (!be.type.isBooleanType()) {
+			//
+			// +, -, *, /, %, 
+			// &, |, ^, 
+			// <<, >>, >>>
+			//
+			be.left().visit(this);
+			gen.dataConvert(be.left().type, be.type);
+			be.right().visit(this);
+			gen.dataConvert(be.right().type, be.type);
+
+			switch (be.op().kind) {
+				case BinOp.PLUS  : suffix = "add"; break;
+				case BinOp.MINUS : suffix = "sub"; break;
+				case BinOp.MULT  : suffix = "mul"; break;
+				case BinOp.DIV   : suffix = "div"; break;
+				case BinOp.MOD   : suffix = "rem"; break;
+				case BinOp.AND   : suffix = "and"; break;
+				case BinOp.OR    : suffix = "or" ; break;
+				case BinOp.XOR   : suffix = "xor"; break;
+				case BinOp.LSHIFT  : suffix = "shl"; break;
+				case BinOp.RSHIFT  : suffix = "shr"; break;
+				case BinOp.RRSHIFT : suffix = "ushr"; break;
+			}
+
+			classFile.addInstruction(new Instruction(Generator.getOpCodeFromString(be.type.getTypePrefix() + suffix)));
+
+		} else {
+			//
+			// <, <=, >, >=, 
+			// ==, !=
+			//
+			String label1 = "L" + gen.getLabel();
+			String label2 = "L" + gen.getLabel();
+			Type ceilingType = be.left().type;
+
+			if (be.left().type instanceof PrimitiveType && be.right().type instanceof PrimitiveType) {
+				ceilingType = PrimitiveType.ceilingType((PrimitiveType)be.left().type, (PrimitiveType)be.right().type);
+				be.left().visit(this);
+				gen.dataConvert(be.left().type, ceilingType);
+				be.right().visit(this);
+				gen.dataConvert(be.right().type, ceilingType);
+			} else {
+				be.left().visit(this);
+				be.right().visit(this);
+			}
+
+			switch(be.op().kind) {
+
+				case BinOp.LT    : suffix = "lt"; break;
+				case BinOp.LTEQ  : suffix = "le"; break;
+				case BinOp.GT    : suffix = "gt"; break;
+				case BinOp.GTEQ  : suffix = "ge"; break;
+				case BinOp.EQEQ  : suffix = "eq"; break;
+				case BinOp.NOTEQ : suffix = "ne"; break;
+			}
+
+			if (ceilingType.isIntegerType()) {
+				classFile.addInstruction(new JumpInstruction(Generator.getOpCodeFromString("if_icmp" + suffix), label1));
+			} else if (ceilingType.isLongType()) {
+				classFile.addInstruction(new Instruction(RuntimeConstants.opc_lcmp));
+				classFile.addInstruction(new JumpInstruction(Generator.getOpCodeFromString("if" + suffix), label1));
+			} else if (ceilingType.isFloatType()) {
+				classFile.addInstruction(new Instruction(RuntimeConstants.opc_fcmpg));
+				classFile.addInstruction(new JumpInstruction(Generator.getOpCodeFromString("if" + suffix), label1));
+			} else if (ceilingType.isDoubleType()) {
+				classFile.addInstruction(new Instruction(RuntimeConstants.opc_dcmpg));
+				classFile.addInstruction(new JumpInstruction(Generator.getOpCodeFromString("if" + suffix), label1));
+			} else if (be.left().type.isNullType() || be.right().type.isNullType()) {
+
+				// Null check
+				if (suffix == "eq") {
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifnull, label1));
+				} else if (suffix == "ne") {
+					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifnonnull, label1));
+				}
+
+			} else if (be.left().type.isClassType() || be.left().type.isArrayType()) {
+
+				// Reference type check
+				if (suffix == "eq" || suffix == "ne") {
+					classFile.addInstruction(new JumpInstruction(Generator.getOpCodeFromString("if_acmp" + suffix), label1));
+				}
+			}
+
+			classFile.addInstruction(new Instruction(RuntimeConstants.opc_iconst_0));
+			classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_goto, label2));
+			classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label1));
+			classFile.addInstruction(new Instruction(RuntimeConstants.opc_iconst_1));
+			classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label2));
 		}
 
-		classFile.addInstruction(new Instruction(Generator.getOpCodeFromString(be.type.getTypePrefix() + suffix)));
-
-	} else {
-		// IS BOOLEAN
-		// TODO: Don't cast class type to primitive type...
-		Type ceilingType = PrimitiveType.ceilingType((PrimitiveType)be.left().type, (PrimitiveType)be.right().type);
-		be.left().visit(this);
-		gen.dataConvert(be.left().type, ceilingType);
-		be.right().visit(this);
-		gen.dataConvert(be.right().type, ceilingType);
-
-
-		switch(be.op().kind) {
-
-			case BinOp.LT :
-				if (ceilingType.isIntegerType()) {
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_if_icmplt, label1));
-				} else if (ceilingType.isLongType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_lcmp));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_iflt, label1));
-				} else if (ceilingType.isFloatType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_fcmpg));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_iflt, label1));
-				} else if (ceilingType.isDoubleType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dcmpg));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_iflt, label1));
-				}
-			
-				break;
-
-			case BinOp.LTEQ :
-				if (ceilingType.isIntegerType()) {
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_if_icmple, label1));
-				} else if (ceilingType.isLongType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_lcmp));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifle, label1));
-				} else if (ceilingType.isFloatType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_fcmpg));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifle, label1));
-				} else if (ceilingType.isDoubleType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dcmpg));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifle, label1));
-				}
-			
-				break;
-
-			case BinOp.GT :
-				if (ceilingType.isIntegerType()) {
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_if_icmpgt, label1));
-				} else if (ceilingType.isLongType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_lcmp));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifgt, label1));
-				} else if (ceilingType.isFloatType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_fcmpg));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifgt, label1));
-				} else if (ceilingType.isDoubleType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dcmpg));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifgt, label1));
-				}
-			
-				break;
-
-			case BinOp.GTEQ :
-				if (ceilingType.isIntegerType()) {
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_if_icmpge, label1));
-				} else if (ceilingType.isLongType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_lcmp));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifge, label1));
-				} else if (ceilingType.isFloatType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_fcmpg));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifge, label1));
-				} else if (ceilingType.isDoubleType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dcmpg));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifge, label1));
-				}
-			
-				break;
-
-			case BinOp.EQEQ :
-				if (ceilingType.isIntegerType()) {
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_if_icmpeq, label1));
-				} else if (ceilingType.isLongType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_lcmp));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifeq, label1));
-				} else if (ceilingType.isFloatType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_fcmpg));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifeq, label1));
-				} else if (ceilingType.isDoubleType()) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dcmpg));
-					classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifeq, label1));
-				} else if (ceilingType.isClassType()) {
-					// TODO: Reference type? Null?
-				}
-			
-				break;
-		}
-
-		classFile.addInstruction(new Instruction(RuntimeConstants.opc_iconst_0));
-		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_goto, label2));
-		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label1));
-		classFile.addInstruction(new Instruction(RuntimeConstants.opc_iconst_1));
-		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label2));
-
+		classFile.addComment(be, "End BinaryExpr");
+		return null;
 	}
-
-	classFile.addComment(be, "End BinaryExpr");
-	return null;
-    }
 
     // BREAK STATEMENT
     public Object visitBreakStat(BreakStat br) {
