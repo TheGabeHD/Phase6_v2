@@ -244,8 +244,9 @@ class GenerateCode extends Visitor {
 				be.right().visit(this);
 				gen.dataConvert(be.right().type, ceilingType);
 			} else {
-				be.left().visit(this);
-				be.right().visit(this);
+				// Only visit if not null
+				if (!be.left().type.isNullType())  {be.left().visit(this);}
+				if (!be.right().type.isNullType()) {be.right().visit(this);}
 			}
 
 			switch(be.op().kind) {
