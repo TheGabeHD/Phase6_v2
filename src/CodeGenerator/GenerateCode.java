@@ -482,6 +482,27 @@ class GenerateCode extends Visitor {
 		println(fs.line + ": ForStat:\tGenerating code.");
 		classFile.addComment(fs, "For Statement");
 		// YOUR CODE HERE
+
+		String label1 = "L" + gen.getLabel();
+		String label2 = "L" + gen.getLabel();
+		String label3 = "L" + gen.getLabel();
+
+		gen.setContinueLabel(label3);
+		gen.setBreakLabel(label2);
+
+		fs.init().visit(this);
+		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label1));
+		fs.expr().visit(this);
+
+		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifeq, label2));
+
+		fs.stats().visit(this);
+		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label3));
+		fs.incr().visit(this);
+
+		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_goto, label1));
+		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label2));
+
 		classFile.addComment(fs, "End ForStat");	
 		return null;
 	}
@@ -501,10 +522,55 @@ class GenerateCode extends Visitor {
 	public Object visitInvocation(Invocation in) {
 	    println(in.line + ": Invocation:\tGenerating code for invoking method '" + in.methodName().getname() + "' in class '" + in.targetType.typeName() + "'.");
 		classFile.addComment(in, "Invocation");
+
 		// YOUR CODE HERE
 
-		classFile.addComment(in, "End Invocation");
+		in.target().visit(this);
+		in.params().visit(this);
 
+		// invokeinterface 
+		//		target = interface type
+		// invokespecial
+		// 		Constructor (Handled by cinvocation)
+		//		Private
+		//		target = super (super generates a 'this' reference)
+		// invokestatic
+		//		method = static
+		// invokevirtual
+		//		target = class type
+
+		if (in.targetMethod.isInterfaceMember()) {
+			classFile.addInstruction(new InterfaceInvocationInstruction(
+				RuntimeConstants.opc_invokeinterface, 
+				in.targetMethod.getMyClass().name(),
+				in.methodName().getname(),
+				"(" + in.targetMethod.paramSignature() + ")" + in.targetMethod.returnType().signature(),
+				in.params().nchildren
+			));
+		} else if (in.targetMethod.getModifiers().isPrivate() || in.target() instanceof Super) {
+			classFile.addInstruction(new MethodInvocationInstruction(
+				RuntimeConstants.opc_invokespecial,
+				in.targetMethod.getMyClass().name(),
+				in.methodName().getname(),
+				"(" + in.targetMethod.paramSignature() + ")"  + in.targetMethod.returnType().signature()
+			));
+		} else if (in.targetMethod.getModifiers().isStatic()) {
+			classFile.addInstruction(new MethodInvocationInstruction(
+				RuntimeConstants.opc_invokestatic,
+				in.targetMethod.getMyClass().name(),
+				in.methodName().getname(),
+				"(" + in.targetMethod.paramSignature() + ")" + in.targetMethod.returnType().signature()
+			));	
+		} else if (in.targetType.isClassType()) {
+			classFile.addInstruction(new MethodInvocationInstruction(
+				RuntimeConstants.opc_invokevirtual,
+				in.targetMethod.getMyClass().name(),
+				in.methodName().getname(),
+				"(" + in.targetMethod.paramSignature() + ")" + in.targetMethod.returnType().signature()
+			));
+		}
+
+		classFile.addComment(in, "End Invocation");
 
 		return null;
 	}
@@ -555,6 +621,18 @@ class GenerateCode extends Visitor {
 			classFile.addComment(ld, "Local Variable Declaration");
 
 			// YOUR CODE HERE
+			ld.var().init().visit(this);
+
+			int instruction = gen.getStoreInstruction(ld.type(), ld.address, false);
+
+			if (ld.address < 4) {
+				// Instruction
+				classFile.addInstruction(new Instruction(instruction));
+			} else {
+				// SimpleInstruction
+				classFile.addInstruction(new SimpleInstruction(instruction, ld.address));
+			}
+
 			classFile.addComment(ld, "End LocalDecl");
 		}
 		else
@@ -757,6 +835,19 @@ class GenerateCode extends Visitor {
 		classFile.addComment(ws, "While Statement");
 
 		// YOUR CODE HERE
+		String topLabel = "L" + gen.getLabel();
+		String endLabel = "L" + gen.getLabel();
+
+		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, topLabel));
+		ws.expr().visit(this);
+		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifeq, endLabel));
+
+		if (ws.stat() != null) {
+			ws.stat().visit(this);
+		}
+
+		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_goto, topLabel));
+		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, endLabel));
 
 		classFile.addComment(ws, "End WhileStat");	
 		return null;

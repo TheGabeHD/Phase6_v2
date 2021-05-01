@@ -22,7 +22,7 @@ class AllocateAddresses extends Visitor {
 			gen.inc2Address(); 
 		}
 		else {
-			gen.setAddress(1);
+			gen.incAddress();
 		}
 		//super.visitLocalDecl(ld);
 		//ld.localsUsed = gen.getAddress();
