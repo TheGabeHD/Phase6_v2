@@ -304,19 +304,27 @@ class GenerateCode extends Visitor {
 	classFile.addComment(br, "Break Statement");
 
 	// YOUR CODE HERE
+	classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_goto, gen.getBreakLabel()));
 
 	classFile.addComment(br, "End BreakStat");
 	return null;
     }
 
     // CAST EXPRESSION
-    public Object visitCastExpr(CastExpr ce) {
-	println(ce.line + ": CastExpr:\tGenerating code for a Cast Expression.");
-	classFile.addComment(ce, "Cast Expression");
-	String instString;
-	// YOUR CODE HERE
-	classFile.addComment(ce, "End CastExpr");
-	return null;
+		public Object visitCastExpr(CastExpr ce) {
+		println(ce.line + ": CastExpr:\tGenerating code for a Cast Expression.");
+		classFile.addComment(ce, "Cast Expression");
+		String instString;
+
+		// YOUR CODE HERE
+		ce.expr().visit(this);
+		
+		if (!ce.type().isClassType()) {
+			gen.dataConvert(ce.expr().type, ce.type());
+		}
+
+		classFile.addComment(ce, "End CastExpr");
+		return null;
     }
     
 	// CONSTRUCTOR INVOCATION (EXPLICIT)
@@ -382,6 +390,7 @@ class GenerateCode extends Visitor {
 		classFile.addComment(cs, "Continue Statement");
 
 		// YOUR CODE HERE
+		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_goto, gen.getContinueLabel()));
 
 		classFile.addComment(cs, "End ContinueStat");
 		return null;
@@ -393,6 +402,23 @@ class GenerateCode extends Visitor {
 		classFile.addComment(ds, "Do Statement");
 
 		// YOUR CODE HERE
+		String label1 = "L" + gen.getLabel();
+		String label2 = "L" + gen.getLabel();
+		String label3 = "L" + gen.getLabel();
+
+		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label1));
+
+		ds.stat().visit(this);
+
+		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label3));
+
+		ds.expr().visit(this);
+
+		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifeq, label2));
+		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_goto, label1));
+
+		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label2));
+		
 
 		classFile.addComment(ds, "End DoStat");
 		return null; 
@@ -513,6 +539,36 @@ class GenerateCode extends Visitor {
 		classFile.addComment(is, "If Statement");
 
 		// YOUR CODE HERE
+
+		if (is.elsepart() == null) {
+			String label = "L" + gen.getLabel();
+
+			is.expr().visit(this);
+
+			classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifeq, label));
+
+			is.thenpart().visit(this);
+	
+			classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label));
+		} else {
+			String label1 = "L" + gen.getLabel();
+			String label2 = "L" + gen.getLabel();
+
+			is.expr().visit(this);
+
+			classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifeq, label1));
+
+			is.thenpart().visit(this);
+
+			classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_goto, label2));
+	
+			classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label1));
+
+			is.elsepart().visit(this);
+
+			classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label2));
+		}
+
 		classFile.addComment(is,  "End IfStat");
 		return null;
 	}
@@ -623,6 +679,9 @@ class GenerateCode extends Visitor {
 			// YOUR CODE HERE
 			ld.var().init().visit(this);
 
+			// Convert init to ld.type()
+			gen.dataConvert(ld.var().init().type, ld.type());
+
 			int instruction = gen.getStoreInstruction(ld.type(), ld.address, false);
 
 			if (ld.address < 4) {
@@ -654,7 +713,6 @@ class GenerateCode extends Visitor {
 		return null;
 	}
 
-
 	// NAME EXPRESSION
 	public Object visitNameExpr(NameExpr ne) {
 		classFile.addComment(ne, "Name Expression --");
@@ -667,6 +725,17 @@ class GenerateCode extends Visitor {
 		}
 
 		// YOUR CODE HERE
+		VarDecl vd = (VarDecl)ne.myDecl;
+
+		int instruction = gen.getLoadInstruction(vd.type(), vd.address(), false);
+
+		if (vd.address() < 4) {
+			// Instruction
+			classFile.addInstruction(new Instruction(instruction));
+		} else {
+			// SimpleInstruction
+			classFile.addInstruction(new SimpleInstruction(instruction, vd.address()));
+		}
 
 		classFile.addComment(ne, "End NameExpr");
 		return null;
@@ -678,6 +747,15 @@ class GenerateCode extends Visitor {
 		classFile.addComment(ne, "New");
 
 		// YOUR CODE HERE
+		classFile.addInstruction(new ClassRefInstruction(RuntimeConstants.opc_new, ne.type().myDecl.name()));
+		classFile.addInstruction(new Instruction(RuntimeConstants.opc_dup));
+
+		ne.args().visit(this);
+		classFile.addInstruction(new MethodInvocationInstruction(
+			RuntimeConstants.opc_invokespecial, 
+			ne.type().myDecl.name(), 
+			"<init>(" + ne.getConstructorDecl().paramSignature() + ")V", 
+			""));
 
 		classFile.addComment(ne, "End New");
 		return null;
@@ -689,6 +767,16 @@ class GenerateCode extends Visitor {
 		classFile.addComment(rs, "Return Statement");
 
 		// YOUR CODE HERE
+		if (rs.expr() != null) {
+			rs.expr().visit(this);
+		}
+
+		// For some reason, rs.type is null when return type is void...
+		if (rs.getType() == null) {
+			classFile.addInstruction(new Instruction(RuntimeConstants.opc_return));
+		} else {
+			classFile.addInstruction(new Instruction(Generator.getOpCodeFromString(rs.getType().getTypePrefix() + "return")));
+		}
 
 		classFile.addComment(rs, "End ReturnStat");
 		return null;
@@ -702,6 +790,16 @@ class GenerateCode extends Visitor {
 		classFile.addComment(si, "Static Initializer");
 
 		// YOUR CODE HERE
+		// Field Init Generation
+		classFile.addComment(si, "Field Init Generation Start");
+		GenerateFieldInits init = new GenerateFieldInits(gen, currentClass, true);
+		currentClass.visit(init);
+		classFile.addComment(si, "Field Init Generation End");
+
+		si.initializer().visit(this);
+
+		// Return
+		classFile.addInstruction(new Instruction(RuntimeConstants.opc_return));
 
 		si.setCode(classFile.getCurrentMethodCode());
 		classFile.endMethod();
@@ -714,6 +812,7 @@ class GenerateCode extends Visitor {
 		classFile.addComment(su, "Super");
 
 		// YOUR CODE HERE
+		classFile.addInstruction(new Instruction(RuntimeConstants.opc_aload_0));
 
 		classFile.addComment(su, "End Super");
 		return null;
@@ -789,6 +888,23 @@ class GenerateCode extends Visitor {
 		StringBuilderCreated = false;
 
 		// YOUR CODE HERE
+
+		String label1 = "L" + gen.getLabel();
+		String label2 = "L" + gen.getLabel();
+
+		te.expr().visit(this);
+
+		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_ifeq, label1));
+
+		te.trueBranch().visit(this);
+
+		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_goto, label2));
+		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label1));
+
+		te.falseBranch().visit(this);
+
+		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label2));
+
 		classFile.addComment(te, "Ternary");
 		StringBuilderCreated = OldStringBuilderCreated;
 		return null;
@@ -813,6 +929,126 @@ class GenerateCode extends Visitor {
 
 		// YOUR CODE HERE
 
+		String suffix = up.op().getKind() == PostOp.PLUSPLUS ? "add" : "sub";
+
+		if (up.expr() instanceof NameExpr) {
+			// Local or Parameter
+			up.expr().visit(this);
+
+			Type type = up.expr().type;
+			int address = ((VarDecl)((NameExpr)up.expr()).myDecl).address();
+
+			if (type.isIntegerType()) {
+				int inc = up.op().getKind() == PostOp.PLUSPLUS ? 1 : -1;
+				classFile.addInstruction(new IincInstruction(RuntimeConstants.opc_iinc, address, inc));
+			} else {
+
+				// dup | dup2
+				if (type.isLongType() || type.isDoubleType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dup2));
+				} else {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dup));
+				}
+
+				// Xconst_1
+				classFile.addInstruction(new Instruction(Generator.getOpCodeFromString(type.getTypePrefix() + "const_1")));
+
+				// Xadd | Xsub
+				classFile.addInstruction(new Instruction(Generator.getOpCodeFromString(type.getTypePrefix() + suffix)));
+
+				// Xstore_Y | Xstore Y
+				int instruction = gen.getStoreInstruction(type, address, false);
+
+				if (address < 4) {
+					// Instruction
+					classFile.addInstruction(new Instruction(instruction));
+				} else {
+					// SimpleInstruction
+					classFile.addInstruction(new SimpleInstruction(instruction, address));
+				}
+			}
+
+		} else {
+			// Field ref
+			FieldRef fr = (FieldRef)up.expr();
+			Type type = up.expr().type;
+
+			fr.target().visit(this);
+
+			// Static?
+			if (fr.myDecl.modifiers.isStatic()) {
+
+				// Target class name?
+				if (!(fr.target() instanceof NameExpr) || (fr.target() instanceof NameExpr && !(((NameExpr)fr.target()).myDecl instanceof ClassDecl))) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_pop));			
+				}
+
+				// getstatic
+				classFile.addInstruction(new FieldRefInstruction(
+					RuntimeConstants.opc_getstatic, 
+					fr.targetType.typeName(),
+					fr.fieldName().getname(), 
+					fr.type.signature()
+				));
+
+				// dup | dup2
+				if (type.isLongType() || type.isDoubleType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dup2));
+				} else {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dup));
+				}
+
+			} else {
+
+				// dup
+				classFile.addInstruction(new Instruction(RuntimeConstants.opc_dup));
+
+				// getfield
+				classFile.addInstruction(new FieldRefInstruction(
+					RuntimeConstants.opc_getfield, 
+					fr.targetType.typeName(),
+					fr.fieldName().getname(), 
+					fr.type.signature()
+				));
+
+				// dup_x1 | dup2_x1
+				if (type.isLongType() || type.isDoubleType()) {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dup2_x1));
+				} else {
+					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dup_x1));
+				}
+			}
+
+			// Xconst_1
+			classFile.addInstruction(new Instruction(Generator.getOpCodeFromString(type.getTypePrefix() + "const_1")));
+
+			// Xadd | Xsub
+			classFile.addInstruction(new Instruction(Generator.getOpCodeFromString(type.getTypePrefix() + suffix)));
+
+			// Static?
+			if (fr.myDecl.modifiers.isStatic()) {
+
+				// putstatic
+				classFile.addInstruction(new FieldRefInstruction(
+					RuntimeConstants.opc_putstatic,
+					fr.targetType.typeName(), 
+					fr.fieldName().getname(), 
+					fr.type.signature()
+				));
+
+			} else {
+
+				// putfield
+				classFile.addInstruction(new FieldRefInstruction(
+					RuntimeConstants.opc_putfield,
+					fr.targetType.typeName(), 
+					fr.fieldName().getname(), 
+					fr.type.signature()
+				));
+
+			}
+		}
+
 		classFile.addComment(up, "End UnaryPostExpr");
 		return null;
 	}
@@ -823,6 +1059,23 @@ class GenerateCode extends Visitor {
 		classFile.addComment(up,"Unary Pre Expression");
 
 		// YOUR CODE HERE
+
+		// up.expr().visit(this);
+
+		// switch(up.op().getKind()) {
+
+		// 	case (PreOp.PLUSPLUS)
+
+
+
+
+
+
+
+
+
+
+		// }
 
 		classFile.addComment(up, "End UnaryPreExpr");
 		return null;
@@ -837,6 +1090,9 @@ class GenerateCode extends Visitor {
 		// YOUR CODE HERE
 		String topLabel = "L" + gen.getLabel();
 		String endLabel = "L" + gen.getLabel();
+
+		gen.setContinueLabel(topLabel);
+		gen.setBreakLabel(endLabel);
 
 		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, topLabel));
 		ws.expr().visit(this);
