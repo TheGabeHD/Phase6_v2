@@ -231,7 +231,9 @@ class GenerateCode extends Visitor {
 		} else {
 			//
 			// <, <=, >, >=, 
-			// ==, !=
+			// ==, !=,
+			// instanceof,
+			// &&, ||
 			//
 			String label1 = "L" + gen.getLabel();
 			String label2 = "L" + gen.getLabel();
@@ -257,6 +259,10 @@ class GenerateCode extends Visitor {
 				case BinOp.GTEQ  : suffix = "ge"; break;
 				case BinOp.EQEQ  : suffix = "eq"; break;
 				case BinOp.NOTEQ : suffix = "ne"; break;
+				// TODO:
+				// instanceof
+				// &&
+				// ||
 			}
 
 			if (ceilingType.isIntegerType()) {
@@ -365,13 +371,16 @@ class GenerateCode extends Visitor {
 		// 12/05/13 = removed if (just in case this ever breaks ;-) )
 		cd.cinvocation().visit(this);
 
-		// YOUR CODE HERE
-
 		// Field Init Generation
 		classFile.addComment(cd, "Field Init Generation Start");
 		GenerateFieldInits init = new GenerateFieldInits(gen, currentClass, false);
 		currentClass.visit(init);
 		classFile.addComment(cd, "Field Init Generation End");
+
+		// YOUR CODE HERE
+		if (cd.body() != null) {
+			cd.body().visit(this);
+		}
 
 		// Return
 		classFile.addInstruction(new Instruction(RuntimeConstants.opc_return));
@@ -433,7 +442,7 @@ class GenerateCode extends Visitor {
 		es.expression().visit(this);
 		if (es.expression() instanceof Invocation) {
 			Invocation in = (Invocation)es.expression();
-			System.out.println(in.target() == null);
+			//System.out.println(in.target() == null);
 
 
 			if (in.targetType.isStringType() && in.methodName().getname().equals("length")) {
@@ -581,7 +590,15 @@ class GenerateCode extends Visitor {
 
 		// YOUR CODE HERE
 
+		println(in.line + ": Invocation:\tGenerating code for the target.");
 		in.target().visit(this);
+
+		// Pop if static and target is not class name
+		if (in.targetMethod.getModifiers().isStatic() && !(in.target() instanceof NameExpr && ((NameExpr)in.target()).myDecl instanceof ClassDecl)) {
+			println(in.line + ": Invocation:\tIssuing a POP instruction to remove target reference; not needed for static invocation.");
+			classFile.addInstruction(new Instruction(RuntimeConstants.opc_pop));			
+		}
+
 		in.params().visit(this);
 
 		// invokeinterface 
@@ -725,6 +742,8 @@ class GenerateCode extends Visitor {
 		}
 
 		// YOUR CODE HERE
+		println(ne.line + ": NameExpr:\tGenerating code for a local var/param (access) for '" + ne.name().getname() + "'.");
+
 		VarDecl vd = (VarDecl)ne.myDecl;
 
 		int instruction = gen.getLoadInstruction(vd.type(), vd.address(), false);
