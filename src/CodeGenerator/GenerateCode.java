@@ -369,10 +369,12 @@ class GenerateCode extends Visitor {
 		String instString;
 
 		// YOUR CODE HERE
+		// TODO: Handle i2b, i2c, i2s, and casts that reqiure two instructions (i.e. double to byte)
+		// Page 514 in the book
+
 		ce.expr().visit(this);
 		
 		if (!ce.type().isClassType()) {
-			println("Converting from "+ ce.expr().type.typeName() + " to " + ce.type().typeName());
 			gen.dataConvert(ce.expr().type, ce.type());
 		}
 
