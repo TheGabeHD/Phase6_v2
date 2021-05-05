@@ -53,7 +53,7 @@ public class Generator {
 	public void setAddress(int address) {
 		this.address = address;
 		//System.out.println("Setting address to " + address);
-		if (address > maxAddress)
+		if (address < maxAddress)
 		    this.maxAddress = address;
 	}
 

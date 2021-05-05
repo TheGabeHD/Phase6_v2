@@ -261,10 +261,10 @@ class GenerateCode extends Visitor {
 				case BinOp.ANDAND :
 					isCompare = false; 
 						
-					String lbl = "L" + gen.getLabel();
-
 					// Visit left
 					be.left().visit(this);
+
+					String lbl = "L" + gen.getLabel();
 
 					// dup
 					classFile.addInstruction(new Instruction(RuntimeConstants.opc_dup));
@@ -369,12 +369,24 @@ class GenerateCode extends Visitor {
 		String instString;
 
 		// YOUR CODE HERE
-		// TODO: Handle i2b, i2c, i2s, and casts that reqiure two instructions (i.e. double to byte)
-		// Page 514 in the book
-
 		ce.expr().visit(this);
-		
-		if (!ce.type().isClassType()) {
+
+		// Handle i2b, i2c, i2s, and casts that reqiure two instructions (i.e. double to byte)
+		if (ce.type().isByteType() || ce.type().isCharType() || ce.type().isShortType()) {
+
+			if (!ce.expr().type.isIntegerType()) {
+				gen.dataConvert(ce.expr().type, new PrimitiveType(PrimitiveType.IntKind));
+			}
+
+			if (ce.type().isByteType()) {
+				classFile.addInstruction(new Instruction(RuntimeConstants.opc_i2b));
+			} else if (ce.type().isCharType()) {
+				classFile.addInstruction(new Instruction(RuntimeConstants.opc_i2c));
+			} else if (ce.type().isShortType()) {
+				classFile.addInstruction(new Instruction(RuntimeConstants.opc_i2s));
+			}
+
+		} else if (!ce.type().isClassType()) {
 			gen.dataConvert(ce.expr().type, ce.type());
 		}
 
@@ -522,6 +534,8 @@ class GenerateCode extends Visitor {
 
 		classFile.addField(fd);
 
+		// If static and if fd.var().init() not null, insert into parse tree?????
+
 		return null;
 	}
 
@@ -641,7 +655,12 @@ class GenerateCode extends Visitor {
 		// YOUR CODE HERE
 
 		println(in.line + ": Invocation:\tGenerating code for the target.");
-		if (in.target() != null) {in.target().visit(this);}
+		if (in.target() != null) {
+			in.target().visit(this);
+		} else if (in.targetType.isClassType() && ((ClassType)in.targetType).myDecl == currentClass && !in.targetMethod.getModifiers().isStatic()) {
+			// If target is null and current class, load "this"
+			classFile.addInstruction(new Instruction(RuntimeConstants.opc_aload_0));
+		}
 
 		// Pop if static and target is not class name or null
 		if (in.target() != null && in.targetMethod.getModifiers().isStatic() && !(in.target() instanceof NameExpr && ((NameExpr)in.target()).myDecl instanceof ClassDecl)) {
@@ -650,6 +669,10 @@ class GenerateCode extends Visitor {
 		}
 
 		in.params().visit(this);
+		// For each parameter, convert type of in.params[i] to type of in.targetMethod.params[i].type
+
+
+		
 
 		// invokeinterface 
 		//		target = interface type
@@ -1238,47 +1261,23 @@ class GenerateCode extends Visitor {
 		} else if (up.expr() instanceof FieldRef) {
 			// FIELD REF
 			FieldRef fr = (FieldRef)up.expr();
-			fr.target().visit(this);
-
-			// Static?
-			if (fr.myDecl.modifiers.isStatic()) {
-
-				// Target class name?
-				if (!(fr.target() instanceof NameExpr) || (fr.target() instanceof NameExpr && !(((NameExpr)fr.target()).myDecl instanceof ClassDecl))) {
-					classFile.addInstruction(new Instruction(RuntimeConstants.opc_pop));			
-				}
-
-				// getstatic
-				classFile.addInstruction(new FieldRefInstruction(
-					RuntimeConstants.opc_getstatic, 
-					fr.targetType.typeName(),
-					fr.fieldName().getname(), 
-					fr.type.signature()
-				));
-
-			} else {
-
-				// dup
-				classFile.addInstruction(new Instruction(RuntimeConstants.opc_dup));
-
-				// getfield
-				classFile.addInstruction(new FieldRefInstruction(
-					RuntimeConstants.opc_getfield, 
-					fr.targetType.typeName(),
-					fr.fieldName().getname(), 
-					fr.type.signature()
-				));
-			}
 
 			switch(up.op().getKind()) {
 
-				case PreOp.PLUS : /*do nothing*/ break;
+				case PreOp.PLUS : 
+				
+					up.expr().visit(this); break;
+
 				case PreOp.MINUS :
+
+					up.expr().visit(this);
 
 					// Xneg
 					classFile.addInstruction(new Instruction(Generator.getOpCodeFromString(type.getTypePrefix() + "neg"))); break;
 
 				case PreOp.COMP :
+
+					up.expr().visit(this);
 
 					if (type.isIntegerType()) {
 						// iconst_m1
@@ -1298,6 +1297,8 @@ class GenerateCode extends Visitor {
 
 				case PreOp.NOT :
 
+					up.expr().visit(this);
+
 					// iconst_1
 					classFile.addInstruction(new Instruction(RuntimeConstants.opc_iconst_1));
 
@@ -1307,6 +1308,38 @@ class GenerateCode extends Visitor {
 					break;
 
 				default : // ++ | --
+
+					fr.target().visit(this);
+
+					// Static?
+					if (fr.myDecl.modifiers.isStatic()) {
+
+						// Target class name?
+						if (!(fr.target() instanceof NameExpr) || (fr.target() instanceof NameExpr && !(((NameExpr)fr.target()).myDecl instanceof ClassDecl))) {
+							classFile.addInstruction(new Instruction(RuntimeConstants.opc_pop));			
+						}
+
+						// getstatic
+						classFile.addInstruction(new FieldRefInstruction(
+							RuntimeConstants.opc_getstatic, 
+							fr.targetType.typeName(),
+							fr.fieldName().getname(), 
+							fr.type.signature()
+						));
+
+					} else {
+
+						// dup
+						classFile.addInstruction(new Instruction(RuntimeConstants.opc_dup));
+
+						// getfield
+						classFile.addInstruction(new FieldRefInstruction(
+							RuntimeConstants.opc_getfield, 
+							fr.targetType.typeName(),
+							fr.fieldName().getname(), 
+							fr.type.signature()
+						));
+					}
 
 					// Xconst_1
 					classFile.addInstruction(new Instruction(Generator.getOpCodeFromString(type.getTypePrefix() + "const_1")));
