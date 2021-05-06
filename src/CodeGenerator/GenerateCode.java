@@ -402,7 +402,14 @@ class GenerateCode extends Visitor {
 		// YOUR CODE HERE
 
 		classFile.addInstruction(new Instruction(RuntimeConstants.opc_aload_0));
-		classFile.addInstruction(new MethodInvocationInstruction(RuntimeConstants.opc_invokespecial, ci.targetClass.name(), "<init>()V", ci.constructor.paramSignature()));
+
+		ci.args().visit(this);
+
+		classFile.addInstruction(new MethodInvocationInstruction(
+			RuntimeConstants.opc_invokespecial, 
+			ci.targetClass.name(), 
+			"<init>(" + ci.constructor.paramSignature() + ")V", 
+			""));
 
 		classFile.addComment(ci, "End CInvocation");
 		return null;
@@ -417,7 +424,40 @@ class GenerateCode extends Visitor {
 		currentClass = cd;
 
 		// YOUR CODE HERE
-		cd.body().visit(this);
+
+		// 1) Visit all fields
+		boolean staticInit = false;
+		for (int i = 0; i < cd.body().nchildren; i++) {
+			if (cd.body().children[i] instanceof FieldDecl) {
+
+				FieldDecl fd = (FieldDecl)cd.body().children[i];
+
+				fd.visit(this);
+
+				// Field is static &&
+				// Field has an init &&
+				// No final modifier || final mod but expr is not a literal
+				if (fd.modifiers.isStatic() && 
+					fd.var().init() != null && 
+					(!fd.modifiers.isFinal() ||
+					(fd.modifiers.isFinal() && !(fd.var().init() instanceof Literal)))) {
+					staticInit = true;
+				}
+			}
+		}
+
+		// 2) create a <clinit> if one is needed but not present
+		if (staticInit) {
+			println(cd.line + ": Inserting empty StaticInit into partse tree.");
+			cd.body().append(new StaticInitDecl(new Block(new Sequence())));
+		}
+
+		// 3) Visit all nonfields
+		for (int i = 0; i < cd.body().nchildren; i++) {
+			if (!(cd.body().children[i] instanceof FieldDecl)) {
+				cd.body().children[i].visit(this);
+			}
+		}
 
 		return null;
 	}
@@ -534,8 +574,6 @@ class GenerateCode extends Visitor {
 
 		classFile.addField(fd);
 
-		// If static and if fd.var().init() not null, insert into parse tree?????
-
 		return null;
 	}
 
@@ -585,6 +623,8 @@ class GenerateCode extends Visitor {
 		String label2 = "L" + gen.getLabel();
 		String label3 = "L" + gen.getLabel();
 
+		String oldContinueLabel = Generator.getContinueLabel();
+		String oldBreakLabel = Generator.getBreakLabel();
 		gen.setContinueLabel(label3);
 		gen.setBreakLabel(label2);
 
@@ -601,6 +641,9 @@ class GenerateCode extends Visitor {
 
 		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_goto, label1));
 		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, label2));
+
+		gen.setContinueLabel(oldContinueLabel);
+		gen.setBreakLabel(oldBreakLabel);
 
 		classFile.addComment(fs, "End ForStat");	
 		return null;
@@ -843,8 +886,6 @@ class GenerateCode extends Visitor {
 		classFile.addInstruction(new Instruction(RuntimeConstants.opc_dup));
 
 		ne.args().visit(this);
-
-		// Missing a conversion here?
 
 		classFile.addInstruction(new MethodInvocationInstruction(
 			RuntimeConstants.opc_invokespecial, 
@@ -1444,6 +1485,8 @@ class GenerateCode extends Visitor {
 		String topLabel = "L" + gen.getLabel();
 		String endLabel = "L" + gen.getLabel();
 
+		String oldContinueLabel = Generator.getContinueLabel();
+		String oldBreakLabel = Generator.getBreakLabel();
 		gen.setContinueLabel(topLabel);
 		gen.setBreakLabel(endLabel);
 
@@ -1457,6 +1500,9 @@ class GenerateCode extends Visitor {
 
 		classFile.addInstruction(new JumpInstruction(RuntimeConstants.opc_goto, topLabel));
 		classFile.addInstruction(new LabelInstruction(RuntimeConstants.opc_label, endLabel));
+
+		gen.setContinueLabel(oldContinueLabel);
+		gen.setBreakLabel(oldBreakLabel);
 
 		classFile.addComment(ws, "End WhileStat");	
 		return null;
